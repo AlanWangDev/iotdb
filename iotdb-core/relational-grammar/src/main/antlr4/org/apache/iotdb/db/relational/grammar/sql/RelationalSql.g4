@@ -917,6 +917,11 @@ queryStatement
     | EXPLAIN ANALYZE VERBOSE? query                               #explainAnalyze
     ;
 
+copyStatement
+    : COPY '(' query ')' TO path=string
+    WITH '(' propertyNames+=identifier propertyValues+=literalExpression (',' propertyNames+=identifier propertyValues+=literalExpression )* ')'
+    ;
+
 query
     : with? queryNoWith
     ;
@@ -1535,6 +1540,7 @@ CONSTANT: 'CONSTANT';
 CONSTRAINT: 'CONSTRAINT';
 COUNT: 'COUNT';
 COPARTITION: 'COPARTITION';
+COPY: 'COPY';
 CREATE: 'CREATE';
 CROSS: 'CROSS';
 CUBE: 'CUBE';
