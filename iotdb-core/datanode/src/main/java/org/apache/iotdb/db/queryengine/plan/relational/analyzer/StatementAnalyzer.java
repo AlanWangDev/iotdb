@@ -917,7 +917,7 @@ public class StatementAnalyzer {
 
     @Override
     protected Scope visitCopyStatement(Copy node, Optional<Scope> context) {
-
+      return node.analyze(context);
     }
 
     private List<Expression> descriptorToFields(Scope scope) {
@@ -5330,6 +5330,10 @@ public class StatementAnalyzer {
       }
 
       return field.get().getField();
+    }
+
+    private void validateCopyStatementProperties(List<Property> properties) {
+      // TODO: could refer to validateProperties()
     }
   }
 

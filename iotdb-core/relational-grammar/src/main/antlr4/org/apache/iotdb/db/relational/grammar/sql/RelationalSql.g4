@@ -919,7 +919,7 @@ queryStatement
 
 copyStatement
     : COPY '(' query ')' TO path=string
-    WITH '(' propertyNames+=identifier propertyValues+=literalExpression (',' propertyNames+=identifier propertyValues+=literalExpression )* ')'
+    WITH properties
     ;
 
 query
