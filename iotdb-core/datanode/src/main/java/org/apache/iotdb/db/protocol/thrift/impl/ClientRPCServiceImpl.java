@@ -19,7 +19,6 @@
 
 package org.apache.iotdb.db.protocol.thrift.impl;
 
-import java.util.Map.Entry;
 import org.apache.iotdb.common.rpc.thrift.TAggregationType;
 import org.apache.iotdb.common.rpc.thrift.TEndPoint;
 import org.apache.iotdb.common.rpc.thrift.TRegionReplicaSet;
@@ -235,6 +234,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -334,7 +334,6 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
     if (!SESSION_MANAGER.checkLogin(clientSession)) {
       return RpcUtils.getTSExecuteStatementResp(getNotLoggedInStatus());
     }
-
 
     Long statementId = request.getStatementId();
     long queryId = Long.MIN_VALUE;
@@ -465,7 +464,8 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
           && result.status.code != TSStatusCode.REDIRECTION_RECOMMEND.getStatusCode()) {
         executionContext.finished = true;
         final TSExecuteStatementResp resp = RpcUtils.getTSExecuteStatementResp(result.status);
-        if (executionContext.isDatabaseSetBefore && Objects.isNull(clientSession.getDatabaseName())) {
+        if (executionContext.isDatabaseSetBefore
+            && Objects.isNull(clientSession.getDatabaseName())) {
           // Previously unused
           resp.setOperationType("dropDB");
         }
@@ -474,7 +474,14 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
       executionContext.status = result.status;
 
       try (SetThreadName threadName = new SetThreadName(result.queryId.getId())) {
-        return constructExecutionResponse(queryId, executionContext, request, setResult, clientSession, treeStatement, tableStatement);
+        return constructExecutionResponse(
+            queryId,
+            executionContext,
+            request,
+            setResult,
+            clientSession,
+            treeStatement,
+            tableStatement);
       }
     } catch (ParsingException e) {
       executionContext.finished = true;
@@ -503,14 +510,17 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
       // record each operation time cost
       if (executionContext.statementType != null) {
         CommonUtils.addStatementExecutionLatency(
-            OperationType.EXECUTE_QUERY_STATEMENT, executionContext.statementType.name(), currentOperationCost);
+            OperationType.EXECUTE_QUERY_STATEMENT,
+            executionContext.statementType.name(),
+            currentOperationCost);
       }
 
       if (executionContext.finished) {
         // record total time cost for one query
         long executionTime = COORDINATOR.getTotalExecutionTime(queryId);
         CommonUtils.addQueryLatency(
-            executionContext.statementType, executionTime > 0 ? executionTime : currentOperationCost);
+            executionContext.statementType,
+            executionTime > 0 ? executionTime : currentOperationCost);
         clearUp(clientSession, statementId, queryId, request, t);
       }
       SESSION_MANAGER.updateIdleTime();
@@ -520,33 +530,49 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
     }
   }
 
-  private TSExecuteStatementResp constructExecutionResponse(long queryId,
-      ExecutionContext executionContext, NativeStatementRequest request,
-      SelectResult setResult, IClientSession clientSession, Statement treeStatement,
-      org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement tableStatement) throws IoTDBException, IOException {
+  private TSExecuteStatementResp constructExecutionResponse(
+      long queryId,
+      ExecutionContext executionContext,
+      NativeStatementRequest request,
+      SelectResult setResult,
+      IClientSession clientSession,
+      Statement treeStatement,
+      org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement tableStatement)
+      throws IoTDBException, IOException {
     IQueryExecution queryExecution = COORDINATOR.getQueryExecution(queryId);
     if (queryExecution != null && queryExecution.isQuery()) {
       if (tableStatement instanceof Copy) {
-        return constructCopyExecutionResponse(executionContext, queryId, queryExecution, request, tableStatement);
+        return constructCopyExecutionResponse(
+            executionContext, queryId, queryExecution, request, tableStatement);
       }
-      return constructQueryExecutionResponse(executionContext, queryId, queryExecution, setResult, request);
+      return constructQueryExecutionResponse(
+          executionContext, queryId, queryExecution, setResult, request);
     } else {
-      return constructNonQueryExecutionResponse(executionContext, clientSession,
-          treeStatement, tableStatement);
+      return constructNonQueryExecutionResponse(
+          executionContext, clientSession, treeStatement, tableStatement);
     }
   }
 
-  private TSExecuteStatementResp constructCopyExecutionResponse(ExecutionContext executionContext,
-      long queryId, IQueryExecution queryExecution, NativeStatementRequest request,
-      org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement statement) throws IoTDBException, IOException {
+  private TSExecuteStatementResp constructCopyExecutionResponse(
+      ExecutionContext executionContext,
+      long queryId,
+      IQueryExecution queryExecution,
+      NativeStatementRequest request,
+      org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement statement)
+      throws IoTDBException, IOException {}
 
-  }
-
-  private TSExecuteStatementResp constructQueryExecutionResponse(ExecutionContext executionContext,
-      long queryId, IQueryExecution queryExecution, SelectResult setResult,
-      NativeStatementRequest request) throws IoTDBException, IOException {
+  private TSExecuteStatementResp constructQueryExecutionResponse(
+      ExecutionContext executionContext,
+      long queryId,
+      IQueryExecution queryExecution,
+      SelectResult setResult,
+      NativeStatementRequest request)
+      throws IoTDBException, IOException {
     TSExecuteStatementResp resp;
-    executionContext.statementType = executionContext.statementType == null ? StatementType.QUERY : executionContext.statementType;
+    executionContext.statementType =
+        executionContext.statementType == null
+            ? StatementType.QUERY
+            : executionContext.statementType;
     resp = createResponse(queryExecution.getDatasetHeader(), queryId);
     resp.setStatus(executionContext.status);
     executionContext.finished = setResult.apply(resp, queryExecution, request.getFetchSize());
@@ -563,7 +589,8 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
 
   private TSExecuteStatementResp constructNonQueryExecutionResponse(
       ExecutionContext executionContext,
-      IClientSession clientSession, Statement treeStatement,
+      IClientSession clientSession,
+      Statement treeStatement,
       org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement tableStatement) {
     TSExecuteStatementResp resp;
     executionContext.finished = true;
@@ -577,10 +604,10 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
       resp.setOperationType("dropDB");
     }
 
-    if (tableStatement instanceof SetSqlDialect || treeStatement instanceof SetSqlDialectStatement) {
+    if (tableStatement instanceof SetSqlDialect
+        || treeStatement instanceof SetSqlDialectStatement) {
       resp.setTableModel(
-          SESSION_MANAGER.getCurrSessionAndUpdateIdleTime().getSqlDialect()
-              == SqlDialect.TABLE);
+          SESSION_MANAGER.getCurrSessionAndUpdateIdleTime().getSqlDialect() == SqlDialect.TABLE);
     }
     return resp;
   }
@@ -596,11 +623,7 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
   }
 
   private void clearUp(
-      IClientSession clientSession,
-      Long statementId,
-      Long queryId,
-      TBase<?, ?> req,
-      Throwable t) {
+      IClientSession clientSession, Long statementId, Long queryId, TBase<?, ?> req, Throwable t) {
     COORDINATOR.cleanupQueryExecution(queryId, req, t);
     clientSession.removeQueryId(statementId, queryId);
   }
@@ -3510,8 +3533,7 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
     resp.setColumnIndex2TsBlockColumnIndexList(header.getColumnIndex2TsBlockColumnIndexList());
     resp.setQueryId(queryId);
     resp.setTableModel(
-        SESSION_MANAGER.getCurrSessionAndUpdateIdleTime().getSqlDialect()
-            == SqlDialect.TABLE);
+        SESSION_MANAGER.getCurrSessionAndUpdateIdleTime().getSqlDialect() == SqlDialect.TABLE);
     return resp;
   }
 
