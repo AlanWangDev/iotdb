@@ -20,9 +20,11 @@
 package org.apache.iotdb.db.queryengine.plan.relational.sql.ast;
 
 import java.util.Locale;
+import java.util.Optional;
 import org.apache.iotdb.db.exception.sql.SemanticException;
 
 import org.apache.iotdb.db.protocol.session.IClientSession.SqlDialect;
+import org.apache.iotdb.db.queryengine.plan.relational.analyzer.Scope;
 import org.apache.tsfile.utils.RamUsageEstimator;
 
 import java.util.Collections;
@@ -275,7 +277,7 @@ public class Copy extends Statement {
   }
   /** the Properties methods **/
 
-  public Scope analyze(Scope context) {
+  public Scope analyze(Optional<Scope> context) {
     Scope queryScope = visitQuery(query, Optional.of(context));
     analyzeProperties();
     // no analyze for filePath (String) here 
