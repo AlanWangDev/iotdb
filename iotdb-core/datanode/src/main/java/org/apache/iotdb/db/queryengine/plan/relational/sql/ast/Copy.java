@@ -19,18 +19,17 @@
 
 package org.apache.iotdb.db.queryengine.plan.relational.sql.ast;
 
-import java.util.Locale;
-import java.util.Optional;
 import org.apache.iotdb.db.exception.sql.SemanticException;
-
-import org.apache.iotdb.db.protocol.session.IClientSession.SqlDialect;
 import org.apache.iotdb.db.queryengine.plan.relational.analyzer.Scope;
+
 import org.apache.tsfile.utils.RamUsageEstimator;
 
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 import static java.util.Objects.requireNonNull;
@@ -71,13 +70,12 @@ public class Copy extends Statement {
       available = false;
     }
 
-    /**
-     * Validate and import the properties from the Copy statement.
-     */
+    /** Validate and import the properties from the Copy statement. */
     private void importFromProperties() {
       // Validate properties
       if (properties == null) {
-        throw new SemanticException("Copy statement's properties are not found. Properties are necessary for Copy statement.");
+        throw new SemanticException(
+            "Copy statement's properties are not found. Properties are necessary for Copy statement.");
       }
       // Validate the keys of the properties
       String formatString = null;
@@ -90,7 +88,8 @@ public class Copy extends Statement {
       for (final Property property : properties) {
         final String key = property.getName().getValue().toLowerCase(Locale.ENGLISH);
         if (!SUPPORTED_PROPERTIES.contains(key)) {
-          throw new SemanticException("Copy statement property " + key + " is currently not allowed.");
+          throw new SemanticException(
+              "Copy statement property " + key + " is currently not allowed.");
         }
         if (!propertyNames.add(key)) {
           throw new SemanticException(String.format("Copy statement: Duplicate property: " + key));
@@ -98,26 +97,31 @@ public class Copy extends Statement {
         if (!property.isSetToDefault()) {
           final String value = property.getNonDefaultValue().toString().toLowerCase(Locale.ENGLISH);
           switch (key) {
-            case "format": {
-              formatString = value;
-              break;
-            }
-            case "header":  {
-              headerString = value;
-              break;
-            }
-            case "table_name": {
-              tableNameString = value;
-              break;
-            }
-            case "tag_column_names": {
-              tagColumnNamesString = value;
-              break;
-            }
-            case "time_column_name": {
-              timeColumnNameString = value;
-              break;
-            }
+            case "format":
+              {
+                formatString = value;
+                break;
+              }
+            case "header":
+              {
+                headerString = value;
+                break;
+              }
+            case "table_name":
+              {
+                tableNameString = value;
+                break;
+              }
+            case "tag_column_names":
+              {
+                tagColumnNamesString = value;
+                break;
+              }
+            case "time_column_name":
+              {
+                timeColumnNameString = value;
+                break;
+              }
           }
         }
       }
@@ -132,9 +136,11 @@ public class Copy extends Statement {
       }
       if (!SUPPORTED_FORMATS.contains(formatString)) {
         throw new SemanticException(
-            "Copy statement: FORMAT value '" + formatString + "' is currently not allowed. " +
-                "Supported formats are: " + String.join(", ", SUPPORTED_FORMATS)
-        );
+            "Copy statement: FORMAT value '"
+                + formatString
+                + "' is currently not allowed. "
+                + "Supported formats are: "
+                + String.join(", ", SUPPORTED_FORMATS));
       }
       format = formatString;
 
@@ -144,16 +150,19 @@ public class Copy extends Statement {
           throw new SemanticException("Copy statement's properties: HEADER value is necessary.");
         }
         if (!headerString.equals("true") && !headerString.equals("false")) {
-          throw new SemanticException("Copy statement's properties: HEADER value must be true or false.");
+          throw new SemanticException(
+              "Copy statement's properties: HEADER value must be true or false.");
         }
         header = headerString.equals("true");
       }
 
       // Validate tableNameString
-      // This Copy class is only used in the table model, so no need to verify if it's a table model.
+      // This Copy class is only used in the table model, so no need to verify if it's a table
+      // model.
       if (format.equals("tsfile")) {
         if (tableNameString == null) {
-          throw new SemanticException("Copy statement's properties: TABLE_NAME value is necessary.");
+          throw new SemanticException(
+              "Copy statement's properties: TABLE_NAME value is necessary.");
         }
         tableName = tableNameString;
       }
@@ -168,20 +177,23 @@ public class Copy extends Statement {
           }
         }
       }
-      
+
       // Validate timeColumnNameString
       timeColumnName = timeColumnNameString;
       available = true;
     }
   }
+
   CopyProperty copyProperty;
 
-  public Copy(
-      NodeLocation location, Query query, String filePath, List<Property> properties) {
+  public Copy(NodeLocation location, Query query, String filePath, List<Property> properties) {
     super(location);
-    this.query = requireNonNull(query, "query is null");;
-    this.filePath = requireNonNull(filePath, "filePath is null");;
-    this.properties = requireNonNull(properties, "properties is null");;
+    this.query = requireNonNull(query, "query is null");
+    ;
+    this.filePath = requireNonNull(filePath, "filePath is null");
+    ;
+    this.properties = requireNonNull(properties, "properties is null");
+    ;
     this.copyProperty = new CopyProperty();
   }
 
@@ -246,7 +258,7 @@ public class Copy extends Statement {
     return visitor.visitCopyStatement(this, context);
   }
 
-  /** the Properties methods **/
+  /** the Properties methods * */
   public boolean arePropertiesAvailable() {
     return copyProperty.available;
   }
@@ -271,16 +283,16 @@ public class Copy extends Statement {
     return copyProperty.timeColumnName;
   }
 
-  // called in 
+  // called in
   public void analyzeProperties() {
     copyProperty.importFromProperties();
   }
-  /** the Properties methods **/
 
+  /** the Properties methods * */
   public Scope analyze(Optional<Scope> context) {
     Scope queryScope = visitQuery(query, Optional.of(context));
     analyzeProperties();
-    // no analyze for filePath (String) here 
+    // no analyze for filePath (String) here
     return queryScope;
   }
 }

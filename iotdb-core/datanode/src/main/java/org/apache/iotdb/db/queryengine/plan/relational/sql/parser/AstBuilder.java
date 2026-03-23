@@ -2179,12 +2179,7 @@ public class AstBuilder extends RelationalSqlBaseVisitor<Node> {
       properties = visit(ctx.properties().propertyAssignments().property(), Property.class);
     }
     String path = ((StringLiteral) visit(ctx.path)).getValue();
-    return new Copy(
-        getLocation(ctx),
-        body,
-        path,
-        properties
-    );
+    return new Copy(getLocation(ctx), body, path, properties);
   }
 
   @Override
