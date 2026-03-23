@@ -19,8 +19,8 @@
 
 package org.apache.iotdb.db.queryengine.plan.relational.sql.ast;
 
+import java.util.Arrays;
 import org.apache.iotdb.db.exception.sql.SemanticException;
-import org.apache.iotdb.db.queryengine.plan.relational.analyzer.Scope;
 
 import org.apache.tsfile.utils.RamUsageEstimator;
 
@@ -29,7 +29,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 
 import static java.util.Objects.requireNonNull;
@@ -125,9 +124,6 @@ public class Copy extends Statement {
           }
         }
       }
-      for (final Property property : properties) {
-        process(property, scope);
-      }
 
       // Validate the values of the properties
       // Validate formatString
@@ -168,10 +164,11 @@ public class Copy extends Statement {
       }
 
       // Validate tagColumnNamesString
-      tagColumnNames = Arrays.asList(tagColumnNamesString.split(","));
+
+      if (tagColumnNamesString != null) {
+        tagColumnNames = Arrays.asList(tagColumnNamesString.split(","));
       // INSERT_YOUR_CODE
-      if (tagColumnNames != null) {
-        for (int i = 0; i < tagColumnNames.length; i++) {
+        for (int i = 0; i < tagColumnNames.size(); i++) {
           if (tagColumnNames.get(i) != null) {
             tagColumnNames.set(i, tagColumnNames.get(i).trim());
           }
@@ -189,12 +186,14 @@ public class Copy extends Statement {
   public Copy(NodeLocation location, Query query, String filePath, List<Property> properties) {
     super(location);
     this.query = requireNonNull(query, "query is null");
-    ;
+
     this.filePath = requireNonNull(filePath, "filePath is null");
-    ;
+
     this.properties = requireNonNull(properties, "properties is null");
-    ;
+
     this.copyProperty = new CopyProperty();
+
+    this.copyProperty.importFromProperties();
   }
 
   public Query getQuery() {
@@ -271,7 +270,7 @@ public class Copy extends Statement {
     return copyProperty.header;
   }
 
-  public String getPropertyNameTable() {
+  public String getPropertyTableName() {
     return copyProperty.tableName;
   }
 
@@ -281,18 +280,5 @@ public class Copy extends Statement {
 
   public String getPropertyTimeColumnName() {
     return copyProperty.timeColumnName;
-  }
-
-  // called in
-  public void analyzeProperties() {
-    copyProperty.importFromProperties();
-  }
-
-  /** the Properties methods * */
-  public Scope analyze(Optional<Scope> context) {
-    Scope queryScope = visitQuery(query, Optional.of(context));
-    analyzeProperties();
-    // no analyze for filePath (String) here
-    return queryScope;
   }
 }
