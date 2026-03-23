@@ -1144,6 +1144,20 @@ public class IoTDBDescriptor {
             properties.getProperty(
                 "include_null_value_in_write_throughput_metric",
                 String.valueOf(conf.isIncludeNullValueInWriteThroughputMetric()))));
+
+    conf.setCopyStatementTmpDir(
+        properties.getProperty(
+            "copy_statement_tmp_dir", conf.getCopyStatementTmpDir()
+        )
+    );
+
+    conf.setCopyStatementTmpDirMaxSizeByte(
+        Long.parseLong(
+            properties.getProperty(
+                "copy_statement_tmp_dir_max_size_byte", String.valueOf(conf.getCopyStatementTmpDirMaxSizeByte())
+            )
+        )
+    );
   }
 
   private void loadFixedSizeLimitForQuery(

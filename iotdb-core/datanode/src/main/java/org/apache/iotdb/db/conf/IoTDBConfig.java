@@ -329,6 +329,11 @@ public class IoTDBConfig {
   /** Maximum MemTable number. Invalid when enableMemControl is true. */
   private int maxMemtableNumber = 0;
 
+  private String copyStatementTmpDir =
+      extDir + File.separator + IoTDBConstant.TMP_FOLDER_NAME;
+
+  private long CopyStatementTmpDirMaxSizeByte = 10 * 1024 * 1024 * 1024L;
+
   /** The amount of data iterate each time in server */
   private int batchSize = 100000;
 
@@ -1382,6 +1387,7 @@ public class IoTDBConfig {
     extPipeDir = addDataHomeDir(extPipeDir);
     queryDir = addDataHomeDir(queryDir);
     sortTmpDir = addDataHomeDir(sortTmpDir);
+    copyStatementTmpDir = addDataHomeDir(copyStatementTmpDir);
     formulateDataDirs(tierDataDirs);
   }
 
@@ -4366,5 +4372,21 @@ public class IoTDBConfig {
 
   public void setMaxObjectSizeInByte(long maxObjectSizeInByte) {
     this.maxObjectSizeInByte = maxObjectSizeInByte;
+  }
+
+  public long getCopyStatementTmpDirMaxSizeByte() {
+    return CopyStatementTmpDirMaxSizeByte;
+  }
+
+  public String getCopyStatementTmpDir() {
+    return copyStatementTmpDir;
+  }
+
+  public void setCopyStatementTmpDir(String copyStatementTmpDir) {
+    this.copyStatementTmpDir = copyStatementTmpDir;
+  }
+
+  public void setCopyStatementTmpDirMaxSizeByte(long CopyStatementTmpDirMaxSizeByte) {
+    this.CopyStatementTmpDirMaxSizeByte = CopyStatementTmpDirMaxSizeByte;
   }
 }

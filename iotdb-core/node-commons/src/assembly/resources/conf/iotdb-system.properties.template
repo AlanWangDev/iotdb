@@ -2211,3 +2211,20 @@ enable_retry_for_unknown_error=false
 # effectiveMode: hot_reload
 # Datatype: Boolean
 include_null_value_in_write_throughput_metric=false
+
+####################
+### Copy Statement Configuration
+####################
+
+# The directory to store the temporary files for copy statements.
+# effectiveMode: restart
+# Datatype: String
+copy_statement_tmp_dir=ext/tmp
+
+# The maximum total size of the temporary files for copy statements.
+# effectiveMode: restart
+# Datatype: long
+# Default value: 10GB
+# Unit: byte
+# Don't write as "10 GB" or "10 * 1024 * 1024 * 1024", write as "10737418240".
+copy_statement_tmp_dir_max_size_byte=10737418240
