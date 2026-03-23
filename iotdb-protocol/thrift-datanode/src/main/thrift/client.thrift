@@ -74,6 +74,9 @@ struct TSExecuteStatementResp {
   15: optional string database
   16: optional bool tableModel
   17: optional list<i32> columnIndex2TsBlockColumnIndexList
+  18: optional string copyFilePath //  only used by COPY statement.
+  19: optional string serverCopyFilePath
+  // only used by COPY statement, indicating the temp file path in server
 }
 
 enum TSProtocolVersion {
