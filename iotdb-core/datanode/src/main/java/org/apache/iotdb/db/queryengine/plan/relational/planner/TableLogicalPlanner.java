@@ -260,9 +260,6 @@ public class TableLogicalPlanner {
     if (statement instanceof Insert) {
       return genInsertPlan(analysis, (Insert) statement);
     }
-    if (statement instanceof Copy) {
-      return createRelationPlan(analysis, ((Copy) statement));
-    }
     throw new IllegalStateException(
         "Unsupported statement type: " + statement.getClass().getSimpleName());
   }
