@@ -102,6 +102,7 @@ import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Identifier;
 import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Literal;
 import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.LongLiteral;
 import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.NullLiteral;
+import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Property;
 import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.SetSqlDialect;
 import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.StringLiteral;
 import org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Use;
@@ -141,6 +142,7 @@ import org.apache.iotdb.db.utils.CommonUtils;
 import org.apache.iotdb.db.utils.QueryDataSetUtils;
 import org.apache.iotdb.db.utils.SchemaUtils;
 import org.apache.iotdb.db.utils.SetThreadName;
+import org.apache.iotdb.db.utils.StatementUtils;
 import org.apache.iotdb.rpc.RpcUtils;
 import org.apache.iotdb.rpc.TSStatusCode;
 import org.apache.iotdb.rpc.stmt.PreparedParameterSerde;
@@ -445,9 +447,12 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
                   config.getQueryTimeoutThreshold(),
                   true);
         } else {
+          org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement underlyingStatement =
+              StatementUtils.getUnderlyingStatement(tableStatement);
+          // TODO-alan.vang: maybe need reconstruction and abstraction in future.
           result =
               COORDINATOR.executeForTableModel(
-                  tableStatement,
+                  underlyingStatement,
                   relationSqlParser,
                   clientSession,
                   queryId,
@@ -553,13 +558,33 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
     }
   }
 
+  /**
+   * Construct the execution response for the COPY statement.
+   * 把完整的查询结果写入到服务端上的一个临时文件中，并把临时文件的路径包含在TSExecuteStatementResp中返回。
+   * 涉及到两个服务端全局配置项：临时文件目录和最大临时文件目录总大小。
+   * 
+   * @param executionContext the execution context
+   * @param queryId the query id
+   * @param queryExecution the query execution
+   * @param request the request
+   * @param statement the statement
+   * @return the execution response
+   */
   private TSExecuteStatementResp constructCopyExecutionResponse(
       ExecutionContext executionContext,
       long queryId,
       IQueryExecution queryExecution,
       NativeStatementRequest request,
       org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement statement)
-      throws IoTDBException, IOException {}
+      throws IoTDBException, IOException {
+    String filePath = ((Copy) statement).getFilePath();
+    List<Property> properties = ((Copy) statement).getProperties();
+    TSExecuteStatementResp resp = createResponse(queryExecution.getDatasetHeader(), queryId);
+    resp.setCopyFilePath(filePath);
+    resp.setServerCopyFilePath();
+
+    return resp;
+  }
 
   private TSExecuteStatementResp constructQueryExecutionResponse(
       ExecutionContext executionContext,
