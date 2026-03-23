@@ -247,9 +247,6 @@ public class RelationPlanner extends AstVisitor<RelationPlan, Void> {
   }
 
   @Override
-  protected RelationPlan visitCopyStatement(Copy node, Void context) {}
-
-  @Override
   protected RelationPlan visitTable(final Table table, final Void context) {
     // is this a recursive reference in expandable named query? If so, there's base relation already
     // planned.

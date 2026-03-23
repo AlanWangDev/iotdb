@@ -203,8 +203,6 @@ public class QueryPlanner {
         outerContext);
   }
 
-  public RelationPlan plan(Copy copy) {}
-
   public RelationPlan plan(QuerySpecification node) {
     PlanBuilder builder = planFrom(node);
 
