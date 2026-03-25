@@ -19,6 +19,7 @@
 
 package org.apache.iotdb.db.protocol.thrift.impl;
 
+import java.io.File;
 import org.apache.iotdb.common.rpc.thrift.TAggregationType;
 import org.apache.iotdb.common.rpc.thrift.TEndPoint;
 import org.apache.iotdb.common.rpc.thrift.TRegionReplicaSet;
@@ -43,6 +44,7 @@ import org.apache.iotdb.commons.path.IFullPath;
 import org.apache.iotdb.commons.path.MeasurementPath;
 import org.apache.iotdb.commons.path.NonAlignedFullPath;
 import org.apache.iotdb.commons.path.PartialPath;
+import org.apache.iotdb.commons.schema.column.ColumnHeader;
 import org.apache.iotdb.commons.utils.PathUtils;
 import org.apache.iotdb.db.audit.DNAuditLogger;
 import org.apache.iotdb.db.auth.AuthorityChecker;
@@ -210,7 +212,12 @@ import org.apache.tsfile.block.column.Column;
 import org.apache.tsfile.common.conf.TSFileConfig;
 import org.apache.tsfile.common.conf.TSFileDescriptor;
 import org.apache.tsfile.common.constant.TsFileConstant;
+import org.apache.tsfile.enums.ColumnCategory;
 import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.exception.write.WriteProcessException;
+import org.apache.tsfile.file.metadata.ColumnSchema;
+import org.apache.tsfile.file.metadata.ColumnSchemaBuilder;
+import org.apache.tsfile.file.metadata.TableSchema;
 import org.apache.tsfile.file.metadata.IDeviceID;
 import org.apache.tsfile.file.metadata.IDeviceID.Factory;
 import org.apache.tsfile.read.TimeValuePair;
@@ -222,8 +229,11 @@ import org.apache.tsfile.read.filter.factory.TimeFilterApi;
 import org.apache.tsfile.utils.Binary;
 import org.apache.tsfile.utils.Pair;
 import org.apache.tsfile.utils.TimeDuration;
+import org.apache.tsfile.write.record.Tablet;
 import org.apache.tsfile.write.schema.IMeasurementSchema;
 import org.apache.tsfile.write.schema.MeasurementSchema;
+import org.apache.tsfile.write.v4.ITsFileWriter;
+import org.apache.tsfile.write.v4.TsFileWriterBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -233,12 +243,14 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -560,9 +572,8 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
 
   /**
    * Construct the execution response for the COPY statement.
-   * 把完整的查询结果写入到服务端上的一个临时文件中，并把临时文件的路径包含在TSExecuteStatementResp中返回。
-   * 涉及到两个服务端全局配置项：临时文件目录和最大临时文件目录总大小。
-   * 
+   * Write the complete query result to a temporary file on the server, and include the path of the temporary file in the TSExecuteStatementResp returned.
+   * This involves two server global configuration items: the temporary file directory and the maximum total size of the temporary file directory.
    * @param executionContext the execution context
    * @param queryId the query id
    * @param queryExecution the query execution
@@ -577,13 +588,215 @@ public class ClientRPCServiceImpl implements IClientRPCServiceWithHandler {
       NativeStatementRequest request,
       org.apache.iotdb.db.queryengine.plan.relational.sql.ast.Statement statement)
       throws IoTDBException, IOException {
-    String filePath = ((Copy) statement).getFilePath();
-    List<Property> properties = ((Copy) statement).getProperties();
+    Copy copyStatement = (Copy) statement;
+    String filePath = copyStatement.getFilePath();
     TSExecuteStatementResp resp = createResponse(queryExecution.getDatasetHeader(), queryId);
     resp.setCopyFilePath(filePath);
-    resp.setServerCopyFilePath();
 
+    String format = copyStatement.getPropertyFormat();
+    boolean header = copyStatement.getPropertyHeader();
+    String tableName = copyStatement.getPropertyTableName();
+    List<String> tagColumnNames = copyStatement.getPropertyTagColumnNames();
+    String timeColumnName = copyStatement.getPropertyTimeColumnName();
+
+    if (format.equals("csv")) {
+      TSStatus status = new TSStatus();;
+      status.setCode(TSStatusCode.SEMANTIC_ERROR.getStatusCode());
+      status.setMessage("CSV format not supported.");
+      resp.setStatus(status);
+      return resp;
+    } else {
+      final String serverCopyFilePath =
+          IoTDBDescriptor.getInstance().getConfig().getCopyStatementTmpDir()
+              + File.separator
+              + queryId
+              + "_"
+              + System.currentTimeMillis()
+              + ".tsfile";
+      resp.setServerCopyFilePath(serverCopyFilePath);
+
+      final DatasetHeader datasetHeader = queryExecution.getDatasetHeader();
+      final List<ColumnHeader> outputHeaders = datasetHeader.getColumnHeaders();
+      final List<Integer> outputColumnToTsBlockIndex =
+          datasetHeader.getColumnIndex2TsBlockColumnIndexList();
+
+      final String expectedTimeColumnName =
+          timeColumnName == null || timeColumnName.isEmpty() ? "time" : timeColumnName;
+
+      final Set<String> seenColumns = new HashSet<>();
+      int timeOutputColumnIndex = -1;
+      TSDataType timeColumnType = null;
+
+      final List<String> writeColumnNames = new ArrayList<>();
+      final List<TSDataType> writeColumnTypes = new ArrayList<>();
+      final List<Integer> writeColumnTsBlockIndices = new ArrayList<>();
+      final List<ColumnSchema> writeColumnSchemas = new ArrayList<>();
+
+      final Set<String> tagColumnNameSet = new HashSet<>();
+      if (tagColumnNames != null) {
+        for (final String tagColumnName : tagColumnNames) {
+          if (tagColumnName != null) {
+            tagColumnNameSet.add(tagColumnName.toLowerCase(Locale.ENGLISH));
+          }
+        }
+      }
+
+      for (int i = 0; i < outputHeaders.size(); i++) {
+        final ColumnHeader headerInfo = outputHeaders.get(i);
+        final String outputColumnName = headerInfo.getColumnNameWithAlias();
+        final String normalizedOutputColumnName = outputColumnName.toLowerCase(Locale.ENGLISH);
+        if (!seenColumns.add(normalizedOutputColumnName)) {
+          // The result set contains duplicate columns; only the first one is used.
+          continue;
+        }
+
+        final TSDataType outputColumnType = headerInfo.getColumnType();
+        if (normalizedOutputColumnName.equals(expectedTimeColumnName.toLowerCase(Locale.ENGLISH))) {
+          timeOutputColumnIndex = i;
+          timeColumnType = outputColumnType;
+          continue;
+        }
+
+        final boolean isTagColumn = tagColumnNameSet.contains(normalizedOutputColumnName);
+        if (isTagColumn && outputColumnType != TSDataType.STRING) {
+          throw semanticException(
+              String.format(
+                  "The data type of column %s is %s, which cannot be used as a tag",
+                  outputColumnName, outputColumnType));
+        }
+
+        writeColumnNames.add(outputColumnName);
+        writeColumnTypes.add(outputColumnType);
+        writeColumnTsBlockIndices.add(outputColumnToTsBlockIndex.get(i));
+        writeColumnSchemas.add(
+            new ColumnSchemaBuilder()
+                .name(outputColumnName)
+                .dataType(outputColumnType)
+                .category(isTagColumn ? ColumnCategory.TAG : ColumnCategory.FIELD)
+                .build());
+      }
+
+      if (timeOutputColumnIndex < 0) {
+        if (timeColumnName == null || timeColumnName.isEmpty()) {
+          throw semanticException("No time column appears in the result set");
+        }
+        throw semanticException(
+            String.format(
+                "The time column %s does not appear in the result set", expectedTimeColumnName));
+      }
+      if (timeColumnType != TSDataType.INT64 && timeColumnType != TSDataType.TIMESTAMP) {
+        throw semanticException(
+            String.format("The time column %s is not int64/timestamp", expectedTimeColumnName));
+      }
+
+      final int timeTsBlockColumnIndex = outputColumnToTsBlockIndex.get(timeOutputColumnIndex);
+
+      final File outputFile = new File(serverCopyFilePath);
+      final File parentDir = outputFile.getParentFile();
+      if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+        throw new IOException("Failed to create directory: " + parentDir.getAbsolutePath());
+      }
+
+      try (ITsFileWriter tsFileWriter =
+          new TsFileWriterBuilder()
+              .file(outputFile)
+              .tableSchema(new TableSchema(tableName, writeColumnSchemas))
+              .build()) {
+        final Tablet tablet = new Tablet(writeColumnNames, writeColumnTypes);
+        while (queryExecution.hasNextResult()) {
+          final Optional<TsBlock> tsBlock = queryExecution.getBatchResult();
+          if (!tsBlock.isPresent() || tsBlock.get().isEmpty()) {
+            continue;
+          }
+
+          final TsBlock currentTsBlock = tsBlock.get();
+          for (int rowIndexInBlock = 0;
+              rowIndexInBlock < currentTsBlock.getPositionCount();
+              rowIndexInBlock++) {
+            if (tablet.getRowSize() == tablet.getMaxRowNumber()) {
+              tsFileWriter.write(tablet);
+              tablet.reset();
+            }
+
+            final int rowInTablet = tablet.getRowSize();
+            tablet.addTimestamp(
+                rowInTablet,
+                extractTimestampValue(
+                    currentTsBlock, timeTsBlockColumnIndex, rowIndexInBlock, timeColumnType));
+            for (int columnIndex = 0; columnIndex < writeColumnNames.size(); columnIndex++) {
+              final Object value =
+                  extractColumnValue(
+                      currentTsBlock,
+                      writeColumnTsBlockIndices.get(columnIndex),
+                      rowIndexInBlock,
+                      writeColumnTypes.get(columnIndex),
+                      writeColumnNames.get(columnIndex));
+              tablet.addValue(rowInTablet, writeColumnNames.get(columnIndex), value);
+            }
+          }
+        }
+        if (tablet.getRowSize() > 0) {
+          tsFileWriter.write(tablet);
+          tablet.reset();
+        }
+      } catch (WriteProcessException e) {
+        throw new IOException("Failed to write copy result into tsfile: " + serverCopyFilePath, e);
+      }
+    }
     return resp;
+  }
+
+  private static IoTDBException semanticException(String message) {
+    return new IoTDBException(message, TSStatusCode.SEMANTIC_ERROR.getStatusCode());
+  }
+
+  private static long extractTimestampValue(
+      TsBlock tsBlock, int tsBlockColumnIndex, int rowIndex, TSDataType timeColumnType)
+      throws IoTDBException {
+    if (timeColumnType == TSDataType.INT64 || timeColumnType == TSDataType.TIMESTAMP) {
+      return tsBlock.getColumn(tsBlockColumnIndex).getLong(rowIndex);
+    }
+    throw semanticException("Time column type is not int64/timestamp");
+  }
+
+  private static Object extractColumnValue(
+      TsBlock tsBlock,
+      int tsBlockColumnIndex,
+      int rowIndex,
+      TSDataType dataType,
+      String columnName)
+      throws IoTDBException {
+    final Column column = tsBlock.getColumn(tsBlockColumnIndex);
+    if (column.isNull(rowIndex)) {
+      return null;
+    }
+    switch (dataType) {
+      case BOOLEAN:
+        return column.getBoolean(rowIndex);
+      case INT32:
+        return column.getInt(rowIndex);
+      case INT64:
+      case TIMESTAMP:
+        return column.getLong(rowIndex);
+      case FLOAT:
+        return column.getFloat(rowIndex);
+      case DOUBLE:
+        return column.getDouble(rowIndex);
+      case TEXT:
+      case STRING:
+        return column.getBinary(rowIndex).getStringValue(TSFileConfig.STRING_CHARSET);
+      case BLOB:
+        return column.getBinary(rowIndex);
+      case DATE:
+        // Missing required information: this code path needs a confirmed conversion contract
+        // from TsBlock DATE values to the exact object type accepted by Tablet.addValue for DATE.
+        throw semanticException(
+            String.format(
+                "The data type conversion rule for DATE column %s is not implemented", columnName));
+      default:
+        throw semanticException(
+            String.format("The data type of column %s is %s, which is currently unsupported", columnName, dataType));
+    }
   }
 
   private TSExecuteStatementResp constructQueryExecutionResponse(
